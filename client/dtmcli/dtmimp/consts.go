@@ -64,4 +64,11 @@ const (
 	ProtocolGRPC = "grpc"
 	// ProtocolHTTP const for protocol http
 	ProtocolHTTP = "http"
+
+	// HookBeforeCommit const for trans hook, called before global trans changes to succeed
+	HookBeforeCommit = "before_commit"
+	// HookAfterCommit const for trans hook, called after global trans changes to succeed
+	HookAfterCommit = "after_commit"
+	// HookOnRollback const for trans hook, called after global trans changes to failed
+	HookOnRollback = "on_rollback"
 )

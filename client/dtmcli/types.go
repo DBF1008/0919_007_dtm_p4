@@ -19,6 +19,9 @@ type DB = dtmimp.DB
 // TransOptions transaction option
 type TransOptions = dtmimp.TransOptions
 
+// TransHooks transaction lifecycle hook urls
+type TransHooks = dtmimp.TransHooks
+
 // DBConf declares db configuration
 type DBConf = dtmimp.DBConf
 

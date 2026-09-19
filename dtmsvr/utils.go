@@ -49,7 +49,11 @@ func GetTransGlobal(gid string) *TransGlobal {
 	//nolint:staticcheck
 	dtmimp.PanicIf(trans == nil, fmt.Errorf("no TransGlobal with gid: %s found", gid))
 	//nolint:staticcheck
-	return &TransGlobal{TransGlobalStore: *trans}
+	tg := &TransGlobal{TransGlobalStore: *trans}
+	if tg.Options != "" {
+		dtmimp.MustUnmarshalString(tg.Options, &tg.TransOptions)
+	}
+	return tg
 }
 
 type asyncCtx struct {

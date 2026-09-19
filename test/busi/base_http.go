@@ -53,6 +53,12 @@ func SetSleepCancelHandler(handler SleepCancelHandler) {
 // WebHookResult 1
 var WebHookResult gin.H
 
+// TransHookResults records the trans lifecycle hook callbacks, hook name => request body
+var TransHookResults = map[string]gin.H{}
+
+// TopicEventResult records the last trans completed event received from topic subscription
+var TopicEventResult = gin.H{}
+
 // BaseAppStartup base app startup
 func BaseAppStartup() *gin.Engine {
 	logger.Infof("examples starting")
@@ -232,5 +238,18 @@ func BaseAddRoute(app *gin.Engine) {
 			return errors.New("gid contains 'Error', so return error")
 		}
 		return nil
+	}))
+	app.POST(BusiAPI+"/TransHook", dtmutil.WrapHandler(func(ctx *gin.Context) interface{} {
+		body := gin.H{}
+		err := ctx.BindJSON(&body)
+		dtmimp.FatalIfError(err)
+		if hook, ok := body["hook"].(string); ok {
+			TransHookResults[hook] = body
+		}
+		return nil
+	}))
+	app.POST(BusiAPI+"/TopicEvent", dtmutil.WrapHandler(func(ctx *gin.Context) interface{} {
+		TopicEventResult = gin.H{}
+		return ctx.BindJSON(&TopicEventResult)
 	}))
 }

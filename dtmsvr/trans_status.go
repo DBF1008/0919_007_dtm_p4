@@ -44,6 +44,10 @@ type changeStatusParams struct {
 	result         string
 }
 
+// transHookTimeout timeout for trans lifecycle hook and completed event notify
+// hook timeout or failure will not affect the transaction, only an error log is recorded
+const transHookTimeout = 5 * time.Second
+
 type changeStatusOption func(c *changeStatusParams)
 
 func withRollbackReason(rollbackReason string) changeStatusOption {
@@ -62,6 +66,9 @@ func (t *TransGlobal) changeStatus(status string, opts ...changeStatusOption) {
 	statusParams := &changeStatusParams{}
 	for _, opt := range opts {
 		opt(statusParams)
+	}
+	if status == dtmcli.StatusSucceed && t.Hooks.BeforeCommit != "" {
+		t.callTransHook(dtmimp.HookBeforeCommit, t.Hooks.BeforeCommit, status)
 	}
 	updates := []string{"status", "update_time"}
 	now := time.Now()
@@ -84,6 +91,35 @@ func (t *TransGlobal) changeStatus(status string, opts ...changeStatusOption) {
 	GetStore().ChangeGlobalStatus(&t.TransGlobalStore, status, updates, status == dtmcli.StatusSucceed || status == dtmcli.StatusFailed)
 	logger.Infof("ChangeGlobalStatus to %s ok for %s", status, t.TransGlobalStore.String())
 	t.Status = status
+	if status == dtmcli.StatusSucceed && t.Hooks.AfterCommit != "" {
+		t.callTransHook(dtmimp.HookAfterCommit, t.Hooks.AfterCommit, status)
+	} else if status == dtmcli.StatusFailed && t.Hooks.OnRollback != "" {
+		t.callTransHook(dtmimp.HookOnRollback, t.Hooks.OnRollback, status)
+	}
+	if status == dtmcli.StatusSucceed || status == dtmcli.StatusFailed {
+		notifyTransCompleted(t)
+	}
+}
+
+// callTransHook posts the transaction lifecycle event to the hook url.
+// timeout or failure will not affect the transaction, only an error log is recorded
+func (t *TransGlobal) callTransHook(hook string, hookURL string, status string) {
+	rc := dtmimp.GetRestyClient2(transHookTimeout)
+	resp, err := rc.R().SetBody(map[string]interface{}{
+		"gid":             t.Gid,
+		"trans_type":      t.TransType,
+		"hook":            hook,
+		"status":          status,
+		"rollback_reason": t.RollbackReason,
+	}).SetHeader("Content-type", "application/json").Post(hookURL)
+	if err != nil {
+		logger.Errorf("call trans hook failed. hook: %s url: %s gid: %s err: %v", hook, hookURL, t.Gid, err)
+		return
+	}
+	if resp.IsError() {
+		logger.Errorf("call trans hook return error. hook: %s url: %s gid: %s status: %d body: %s",
+			hook, hookURL, t.Gid, resp.StatusCode(), resp.String())
+	}
 }
 
 func (t *TransGlobal) resetNextCronTime() error {
