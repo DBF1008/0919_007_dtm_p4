@@ -53,6 +53,12 @@ func SetSleepCancelHandler(handler SleepCancelHandler) {
 // WebHookResult 1
 var WebHookResult gin.H
 
+// TransHookResult records transaction lifecycle hook callbacks, keyed by "gid/hook"
+var TransHookResult = map[string]gin.H{}
+
+// TransCompletedResult records global trans completed notifications, keyed by gid
+var TransCompletedResult = map[string]gin.H{}
+
 // BaseAppStartup base app startup
 func BaseAppStartup() *gin.Engine {
 	logger.Infof("examples starting")
@@ -231,6 +237,23 @@ func BaseAddRoute(app *gin.Engine) {
 		if strings.Contains(WebHookResult["gid"].(string), "Error") {
 			return errors.New("gid contains 'Error', so return error")
 		}
+		return nil
+	}))
+	app.POST(BusiAPI+"/TransHook", dtmutil.WrapHandler(func(ctx *gin.Context) interface{} {
+		body := gin.H{}
+		err := ctx.BindJSON(&body)
+		dtmimp.FatalIfError(err)
+		TransHookResult[fmt.Sprintf("%v/%v", body["gid"], body["hook"])] = body
+		return nil
+	}))
+	app.POST(BusiAPI+"/TransHookError", dtmutil.WrapHandler(func(ctx *gin.Context) interface{} {
+		return errors.New("trans hook error for test")
+	}))
+	app.POST(BusiAPI+"/TransCompleted", dtmutil.WrapHandler(func(ctx *gin.Context) interface{} {
+		body := gin.H{}
+		err := ctx.BindJSON(&body)
+		dtmimp.FatalIfError(err)
+		TransCompletedResult[fmt.Sprintf("%v", body["gid"])] = body
 		return nil
 	}))
 }

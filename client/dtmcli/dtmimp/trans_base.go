@@ -51,6 +51,16 @@ type TransOptions struct {
 	Concurrent     bool              `json:"concurrent" gorm:"-"`                // for trans type: saga msg
 	RetryLimit     int64             `json:"retry_limit,omitempty" gorm:"-"`     // for trans type: saga
 	RetryCount     int64             `json:"retry_count,omitempty" gorm:"-"`     // for trans type: saga
+	Hooks          TransHooks        `json:"hooks,omitempty" gorm:"-"`           // lifecycle hook callbacks, invoked by dtm server around status changes
+}
+
+// TransHooks transaction lifecycle hooks, configured as callback URLs.
+// dtm server will HTTP POST the transaction info to these URLs around status changes.
+// hook callback timeout/failure does not affect the main transaction flow, failures are only logged.
+type TransHooks struct {
+	BeforeCommit string `json:"before_commit,omitempty"` // called before the global transaction is committed
+	AfterCommit  string `json:"after_commit,omitempty"`  // called after the global transaction is committed
+	OnRollback   string `json:"on_rollback,omitempty"`   // called after the global transaction is rolled back
 }
 
 // TransBase base for all trans

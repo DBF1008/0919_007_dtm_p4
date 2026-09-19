@@ -44,6 +44,44 @@ type changeStatusParams struct {
 	result         string
 }
 
+// hook names for transaction lifecycle callbacks
+const (
+	// HookBeforeCommit is invoked before the global transaction is committed
+	HookBeforeCommit = "before_commit"
+	// HookAfterCommit is invoked after the global transaction is committed
+	HookAfterCommit = "after_commit"
+	// HookOnRollback is invoked after the global transaction is rolled back
+	HookOnRollback = "on_rollback"
+)
+
+// transCallbackTimeout is the max duration for a lifecycle hook/topic notification callback.
+// callback timeout does not affect the main transaction flow, failures are only logged.
+const transCallbackTimeout = 5 * time.Second
+
+// callTransHook invokes a transaction lifecycle hook via HTTP POST.
+// any error (including timeout) is only logged and never affects the main flow.
+func (t *TransGlobal) callTransHook(hook string, hookURL string, status string) {
+	resp, err := dtmimp.GetRestyClient2(transCallbackTimeout).R().
+		SetHeader("Content-type", "application/json").
+		SetBody(map[string]interface{}{
+			"gid":             t.Gid,
+			"trans_type":      t.TransType,
+			"hook":            hook,
+			"status":          status,
+			"rollback_reason": t.RollbackReason,
+		}).
+		Post(hookURL)
+	if err == nil && resp.IsError() {
+		err = fmt.Errorf("status code: %d body: %s", resp.StatusCode(), resp.String())
+	}
+	if err != nil {
+		logger.Errorf("trans hook callback failed. gid: %s hook: %s url: %s error: %v",
+			t.Gid, hook, hookURL, err)
+		return
+	}
+	logger.Infof("trans hook callback ok. gid: %s hook: %s url: %s", t.Gid, hook, hookURL)
+}
+
 type changeStatusOption func(c *changeStatusParams)
 
 func withRollbackReason(rollbackReason string) changeStatusOption {
@@ -76,6 +114,9 @@ func (t *TransGlobal) changeStatus(status string, opts ...changeStatusOption) {
 		t.RollbackReason = statusParams.rollbackReason
 		updates = append(updates, "rollback_reason")
 	}
+	if status == dtmcli.StatusSucceed && t.Hooks.BeforeCommit != "" {
+		t.callTransHook(HookBeforeCommit, t.Hooks.BeforeCommit, status)
+	}
 	if statusParams.result != "" {
 		t.Result = statusParams.result
 		updates = append(updates, "result")
@@ -84,6 +125,14 @@ func (t *TransGlobal) changeStatus(status string, opts ...changeStatusOption) {
 	GetStore().ChangeGlobalStatus(&t.TransGlobalStore, status, updates, status == dtmcli.StatusSucceed || status == dtmcli.StatusFailed)
 	logger.Infof("ChangeGlobalStatus to %s ok for %s", status, t.TransGlobalStore.String())
 	t.Status = status
+	if status == dtmcli.StatusSucceed && t.Hooks.AfterCommit != "" {
+		t.callTransHook(HookAfterCommit, t.Hooks.AfterCommit, status)
+	} else if status == dtmcli.StatusFailed && t.Hooks.OnRollback != "" {
+		t.callTransHook(HookOnRollback, t.Hooks.OnRollback, status)
+	}
+	if status == dtmcli.StatusSucceed || status == dtmcli.StatusFailed {
+		notifyTransCompleted(t)
+	}
 }
 
 func (t *TransGlobal) resetNextCronTime() error {
